@@ -83,11 +83,6 @@ class ProjectManager:
             
         if sentence_idx in self.locked_sentences:
             self.locked_sentences.remove(sentence_idx)
-            # Re-sync with global tokenization immediately
-            if self.raw_data is not None and self.tokenized_data is not None:
-                raw_text = str(self.raw_data[self.text_column].iloc[sentence_idx])
-                self.tokenized_data.iloc[sentence_idx] = self.tokenizer.tokenize(raw_text)
-                self._update_word_counts()
         else:
             self.locked_sentences.add(sentence_idx)
 
@@ -144,22 +139,22 @@ class ProjectManager:
         self._retokenize()
 
     def add_stop_word(self, word: str):
-        """Mark a word as a stop word and retokenize."""
+        """Mark a word as a stop word and update statistics."""
         self.tokenizer.add_stop_word(word)
-        self._retokenize()
+        self._update_word_counts()
         
     def remove_stop_word(self, word: str):
-        """Remove a word from stop words and retokenize."""
+        """Remove a word from stop words and update statistics."""
         self.tokenizer.remove_stop_word(word)
-        self._retokenize()
+        self._update_word_counts()
 
     def load_stop_words_from_file(self, filepath: str):
-        """Load stop words from a text file (one word per line)."""
+        """Load stop words from a text file (one word per line) and update statistics."""
         with open(filepath, 'r', encoding='utf-8') as f:
             lines = f.readlines()
         words = [line.strip() for line in lines if line.strip()]
         self.tokenizer.load_stop_words(words)
-        self._retokenize()
+        self._update_word_counts()
         
     def get_word_diff(self) -> pd.DataFrame:
         """Compare current word counts with the original word counts."""

@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QSpacerItem, QSizePolicy, QGridLayout
 )
 from PyQt6.QtGui import QShortcut, QKeySequence, QDesktopServices
-from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtCore import Qt, QUrl, QTimer
 import pandas as pd
 from ..core.project_manager import ProjectManager
 from .flow_layout import FlowLayout
@@ -101,7 +101,7 @@ class TokenizationView(QWidget):
         
         self.edit_left_browser = QTextBrowser()
         self.edit_left_browser.setOpenLinks(False)
-        self.edit_left_browser.setStyleSheet("QTextBrowser { border: 1px solid #ddd; background-color: #ffffff; padding: 10px; font-size: 14pt; }")
+        self.edit_left_browser.setStyleSheet("QTextBrowser { border: 1px solid #ddd; background-color: #ffffff; padding: 5px; font-size: 13pt; }")
         left_layout.addWidget(self.edit_left_browser)
         compare_layout.addWidget(left_widget, stretch=1)
 
@@ -118,19 +118,19 @@ class TokenizationView(QWidget):
         right_lbl.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
         tools_layout.addWidget(right_lbl)
         self.btn_merge = QPushButton("合併[M]")
-        self.btn_merge.setStyleSheet("background-color: #ffebee; color: #d32f2f; padding: 5px;")
+        self.btn_merge.setStyleSheet("font-size: 10pt; background-color: #ffebee; color: #d32f2f; padding: 2px 4px;")
         
         self.btn_force_merge = QPushButton("強制合併[F]")
-        self.btn_force_merge.setStyleSheet("background-color: #ffebee; color: #d32f2f; padding: 5px;")
+        self.btn_force_merge.setStyleSheet("font-size: 10pt; background-color: #ffebee; color: #d32f2f; padding: 2px 4px;")
         
         self.btn_split = QPushButton("拆詞[D]")
-        self.btn_split.setStyleSheet("background-color: #ffebee; color: #d32f2f; padding: 5px;")
+        self.btn_split.setStyleSheet("font-size: 10pt; background-color: #ffebee; color: #d32f2f; padding: 2px 4px;")
         
         self.btn_mark_stop = QPushButton("停用詞[S]")
-        self.btn_mark_stop.setStyleSheet("background-color: #e0e0e0; color: #333333; padding: 5px;")
+        self.btn_mark_stop.setStyleSheet("font-size: 10pt; background-color: #e0e0e0; color: #333333; padding: 2px 4px;")
         
         self.btn_clear_selection = QPushButton("取消選取[Esc]")
-        self.btn_clear_selection.setStyleSheet("background-color: #e0e0e0; color: #333333; padding: 5px;")
+        self.btn_clear_selection.setStyleSheet("font-size: 10pt; background-color: #e0e0e0; color: #333333; padding: 2px 4px;")
         
         self.btn_merge.clicked.connect(self.merge_selected_tokens)
         self.btn_force_merge.clicked.connect(self.force_local_merge_selected_tokens)
@@ -149,7 +149,7 @@ class TokenizationView(QWidget):
         self.edit_right_browser = QTextBrowser()
         self.edit_right_browser.setOpenLinks(False)
         self.edit_right_browser.anchorClicked.connect(self._on_anchor_clicked)
-        self.edit_right_browser.setStyleSheet("QTextBrowser { border: 1px solid #ddd; background-color: #ffffff; padding: 10px; font-size: 14pt; }")
+        self.edit_right_browser.setStyleSheet("QTextBrowser { border: 1px solid #ddd; background-color: #ffffff; padding: 5px; font-size: 13pt; }")
         right_layout.addWidget(self.edit_right_browser)
         compare_layout.addWidget(right_widget, stretch=1)
         
@@ -389,20 +389,20 @@ class TokenizationView(QWidget):
         
         self.export_splitter.addWidget(context_widget)
         
-        # Right Side: Context Viewer
-        context_widget = QWidget()
-        context_layout = QVBoxLayout(context_widget)
-        context_layout.setContentsMargins(0, 0, 0, 0)
+        # # Right Side: Context Viewer
+        # context_widget = QWidget()
+        # context_layout = QVBoxLayout(context_widget)
+        # context_layout.setContentsMargins(0, 0, 0, 0)
         
-        lbl_context = QLabel("檢視該詞彙出現的原始句子:")
-        lbl_context.setStyleSheet("font-weight: bold; font-size: 14pt; color: #333;")
-        context_layout.addWidget(lbl_context)
+        # lbl_context = QLabel("檢視該詞彙出現的原始句子:")
+        # lbl_context.setStyleSheet("font-weight: bold; font-size: 14pt; color: #333;")
+        # context_layout.addWidget(lbl_context)
         
-        self.context_browser = QTextBrowser()
-        self.context_browser.setStyleSheet("QTextBrowser { border: 1px solid #ddd; background-color: #fafafa; color: #000000; padding: 10px; font-size: 16pt; }")
-        context_layout.addWidget(self.context_browser)
+        # self.context_browser = QTextBrowser()
+        # self.context_browser.setStyleSheet("QTextBrowser { border: 1px solid #ddd; background-color: #fafafa; color: #000000; padding: 10px; font-size: 16pt; }")
+        # context_layout.addWidget(self.context_browser)
         
-        self.export_splitter.addWidget(context_widget)
+        # self.export_splitter.addWidget(context_widget)
         
         # Set splitter sizes (e.g., 30% table, 70% context)
         self.export_splitter.setStretchFactor(0, 3)
@@ -449,7 +449,7 @@ class TokenizationView(QWidget):
         if self.selected_tokens:
             self.selected_tokens = []
             self.needs_full_refresh['tab2'] = True
-            self._on_tab_changed(self.tabs.currentIndex())
+            self._on_tab_changed(self.tabs.currentIndex(), immediate=True)
 
     def merge_selected_tokens(self):
         """Merge selected tokens into a single word."""
@@ -566,7 +566,7 @@ class TokenizationView(QWidget):
         self.pm.toggle_lock(sentence_idx)
         self.selected_tokens = []
         self.needs_full_refresh['tab2'] = True
-        self._on_tab_changed(self.tabs.currentIndex())
+        self._on_tab_changed(self.tabs.currentIndex(), immediate=True)
         self.update_callback()
 
     def mark_selected_as_stop(self):
@@ -643,7 +643,7 @@ class TokenizationView(QWidget):
                 self.pm.toggle_lock(s_idx)
                 self.selected_tokens = []
                 self.needs_full_refresh['tab2'] = True
-                self._on_tab_changed(self.tabs.currentIndex())
+                self._on_tab_changed(self.tabs.currentIndex(), immediate=True)
             except Exception as e:
                 print(f"Error toggling lock: {e}")
             return
@@ -665,7 +665,8 @@ class TokenizationView(QWidget):
                 
             # Full refresh of Tab 2 Left HTML to reflect selection changes
             self.needs_full_refresh['tab2'] = True
-            self._on_tab_changed(self.tabs.currentIndex())
+            # Use immediate=True for simple selection to avoid flicker
+            self._on_tab_changed(self.tabs.currentIndex(), immediate=True)
         except Exception as e:
             print(f"Error parsing token click: {e}")
 
@@ -838,7 +839,7 @@ class TokenizationView(QWidget):
             self.populate_export_table()
             self.needs_full_refresh['tab3'] = False
 
-    def _on_tab_changed(self, index):
+    def _on_tab_changed(self, index, immediate=False):
         """Lazy load the views based on which tab is active to improve UI performance."""
         if self.pm.raw_data is None:
             return
@@ -862,9 +863,14 @@ class TokenizationView(QWidget):
                 # Note: self.edit_left_browser.setHtml() clears everything anyway
                 self._load_chunk('tab2', preserve_scroll=preserve)
                 
+                # Handle scroll restoration
                 if preserve:
-                    self.edit_left_browser.verticalScrollBar().setValue(scroll_pos)
-                    # The right scrollbar is synchronized with the left one
+                    if immediate:
+                        # For simple selection, immediate restore prevents flicker
+                        self.edit_left_browser.verticalScrollBar().setValue(scroll_pos)
+                    else:
+                        # For content changes (merge/split), defer slightly to allow layout to finish
+                        QTimer.singleShot(10, lambda: self.edit_left_browser.verticalScrollBar().setValue(scroll_pos))
                     
                 self.needs_full_refresh['tab2'] = False
                 

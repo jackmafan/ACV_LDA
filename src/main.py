@@ -16,14 +16,9 @@ from src.app import MainWindow
 
 def main():
     app = QApplication(sys.argv)
-    
-    # Apply a modern style
     app.setStyle("Fusion")
-    
-    # Set global font size for 4K screens (16pt)
-    # Using the system default font family, but ensuring size is correct
     font = app.font()
-    font.setPointSize(16)
+    font.setPointSize(14)
     app.setFont(font)
     
     window = MainWindow()
