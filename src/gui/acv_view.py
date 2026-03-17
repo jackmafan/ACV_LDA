@@ -3,6 +3,7 @@ from PyQt6.QtWidgets import (
     QScrollArea, QLineEdit, QSplitter, QFrame, QMessageBox, QSizePolicy,
     QTableWidget, QTableWidgetItem, QHeaderView, QListWidget, QAbstractItemView
 )
+from typing import Dict
 from PyQt6.QtCore import Qt, pyqtSignal
 from ..core.project_manager import ProjectManager
 
@@ -201,8 +202,9 @@ class ACVView(QWidget):
         txt_input.setPlaceholderText(f"新增...")
         txt_input.setStyleSheet("font-size: 12pt; padding: 2px; max-width: 100px;")
         
-        btn_add = QPushButton("新增")
+        btn_add = QPushButton("新增標籤")
         btn_add.setStyleSheet(f"background-color: {bg_color}; color: {fg_color}; font-weight: bold; padding: 2px 8px; font-size: 10pt;")
+        btn_add.setToolTip("建立一個新的 ACV 概念分類（標籤）")
         
         row_layout.addWidget(btn_label)
         row_layout.addWidget(txt_input)
@@ -221,15 +223,15 @@ class ACVView(QWidget):
         setattr(self, f"layout_{cat_id}", tags_layout)
         setattr(self, f"input_{cat_id}", txt_input)
         
-        btn_add.clicked.connect(lambda: self._on_add_category_word(cat_id))
-        txt_input.returnPressed.connect(lambda: self._on_add_category_word(cat_id))
+        btn_add.clicked.connect(lambda: self._on_add_category_label(cat_id))
+        txt_input.returnPressed.connect(lambda: self._on_add_category_label(cat_id))
         
         scroll_area.setWidget(tags_container)
         row_layout.addWidget(scroll_area, stretch=1)
         
         return row_widget
 
-    def _create_tag_widget(self, word: str, cat_id: str, index: int) -> QFrame:
+    def _create_tag_widget(self, label: str, cat_id: str, index: int) -> QFrame:
         bg_color = self.COLORS[cat_id]['bg']
         fg_color = self.COLORS[cat_id]['fg']
         
@@ -240,40 +242,89 @@ class ACVView(QWidget):
         layout.setContentsMargins(6, 2, 6, 2)
         layout.setSpacing(2)
         
-        lbl_word = QLabel(f"{cat_id}{index}: {word}")
-        lbl_word.setStyleSheet(f"color: {fg_color}; font-size: 12pt; font-weight: bold; border: none;")
-        layout.addWidget(lbl_word)
+        # Clickable Label Name
+        btn_label = QPushButton(f"{label}")
+        btn_label.setStyleSheet(f"color: {fg_color}; font-size: 12pt; font-weight: bold; border: none; background: transparent;")
+        btn_label.setToolTip(f"點擊此標籤，將下方表格中選取的單詞歸類為「{label}」")
+        btn_label.clicked.connect(lambda: self._on_tag_clicked(cat_id, label))
+        layout.addWidget(btn_label)
         
         btn_delete = QPushButton("×")
         btn_delete.setFixedSize(20, 20)
         btn_delete.setStyleSheet(f"color: {fg_color}; background-color: transparent; border: none; font-weight: bold; font-size: 12pt;")
-        btn_delete.clicked.connect(lambda: self._on_remove_category_word(cat_id, word))
+        btn_delete.clicked.connect(lambda: self._on_remove_category_label(cat_id, label))
         layout.addWidget(btn_delete)
         
         return frame
 
-    def _on_category_clicked(self, cat_id: str):
-        """Assign category to selected word in table."""
+    def _on_tag_clicked(self, cat_id: str, label: str):
+        """Assign the selected word in the table to this label."""
         selected_items = self.word_table.selectedItems()
         if not selected_items:
-            QMessageBox.warning(self, "未選擇單詞", "請先在下方表格中選擇一個單詞。")
-            return
+            # Check if we can find selection by current row if no items are strictly 'selectedItems' (Qt quirk)
+            row = self.word_table.currentRow()
+            if row < 0:
+                QMessageBox.warning(self, "未選擇單詞", "請先在下方表格中選擇一個要分類的單詞。")
+                return
+        else:
+            row = selected_items[0].row()
+            
+        word = self.word_table.item(row, 0).text()
+        
+        # Update PM
+        self.pm.assign_word_to_label(cat_id, label, word)
+        
+        # Refresh UI table row
+        self.word_table.item(row, 1).setText(label)
+        self.word_table.item(row, 1).setBackground(Qt.GlobalColor.lightGray)
+        # Category specific coloring for the text in table
+        self.word_table.item(row, 1).setForeground(Qt.GlobalColor.black)
+
+    def _on_category_clicked(self, cat_id: str):
+        """Previously used to assign category directly, now just a hint or unassign?"""
+        # For now, let's make it 'Unassign' the word from any label
+        selected_items = self.word_table.selectedItems()
+        if not selected_items: return
             
         row = selected_items[0].row()
         word = self.word_table.item(row, 0).text()
         
-        # Update PM
-        # We need to make sure the word is added to the category list
-        self.pm.add_acv_word(cat_id, word)
+        self.pm.unassign_word(word)
+        self.word_table.item(row, 1).setText("")
+        self.word_table.item(row, 1).setBackground(Qt.GlobalColor.white)
+
+    def _update_word_table(self, keywords: Dict[str, int]):
+        """Populate the table with given keywords and current ACV mapping."""
+        self.word_table.setRowCount(0)
+        # Update active state in PM for auto-save support
+        self.pm.active_acv_keywords = dict(keywords) if hasattr(keywords, 'items') else {}
         
-        # Also update category_dict word->cat
-        self.pm.category_dict[word] = cat_id
-        
-        # Refresh UI
-        self._refresh_category_row(cat_id)
-        self.word_table.item(row, 1).setText(cat_id)
-        # Style the cell
-        self.word_table.item(row, 1).setBackground(Qt.GlobalColor.lightGray)
+        # keywords might be pd.Series or Dict
+        if hasattr(keywords, 'items'):
+            items = keywords.items()
+        else:
+            items = [] # Fallback
+            
+        for word, count in items:
+            row_idx = self.word_table.rowCount()
+            self.word_table.insertRow(row_idx)
+            
+            item_word = QTableWidgetItem(str(word))
+            item_word.setFlags(item_word.flags() ^ Qt.ItemFlag.ItemIsEditable)
+            
+            # Check current mapping
+            info = self.pm.category_dict.get(str(word), {})
+            display_text = ""
+            if isinstance(info, dict):
+                display_text = info.get("label", "")
+            
+            item_cat = QTableWidgetItem(display_text)
+            item_cat.setFlags(item_cat.flags() ^ Qt.ItemFlag.ItemIsEditable)
+            if display_text:
+                item_cat.setBackground(Qt.GlobalColor.lightGray)
+            
+            self.word_table.setItem(row_idx, 0, item_word)
+            self.word_table.setItem(row_idx, 1, item_cat)
 
     def _on_load_tokenized_words_from_scheme(self):
         """Load keywords from the selected tokenization scheme into the table."""
@@ -293,66 +344,46 @@ class ACVView(QWidget):
             if reply == QMessageBox.StandardButton.No:
                 return
 
-        # We actually need to load the scheme in PM to get its word counts
+        # We need to temporarily load the scheme in PM to calculate its current valid keywords
         try:
-            current_acv_dict = self.pm.acv_dict.copy() # Backup ACV state
+            current_acv_dict = self.pm.acv_dict.copy()
             current_cat_dict = self.pm.category_dict.copy()
             
             self.pm.load_scheme(scheme_name)
+            keywords = self.pm.get_valid_keywords()
             
-            # Restore ACV state as PM.load_scheme might overwrite things if we had schemes for it (though PM currently handles tokens)
             self.pm.acv_dict = current_acv_dict
             self.pm.category_dict = current_cat_dict
+            
+            self._update_word_table(keywords)
             
         except Exception as e:
             QMessageBox.critical(self, "載入失敗", f"無法載入斷詞方案: {str(e)}")
             return
-
-        keywords = self.pm.get_valid_keywords()
-        self.word_table.setRowCount(0)
-        for word, count in keywords.items():
-            row_idx = self.word_table.rowCount()
-            self.word_table.insertRow(row_idx)
-            
-            item_word = QTableWidgetItem(str(word))
-            item_word.setFlags(item_word.flags() ^ Qt.ItemFlag.ItemIsEditable)
-            
-            # Check current mapping
-            current_cat = self.pm.category_dict.get(str(word), "")
-            item_cat = QTableWidgetItem(current_cat)
-            item_cat.setFlags(item_cat.flags() ^ Qt.ItemFlag.ItemIsEditable)
-            if current_cat:
-                item_cat.setBackground(Qt.GlobalColor.lightGray)
-            
-            self.word_table.setItem(row_idx, 0, item_word)
-            self.word_table.setItem(row_idx, 1, item_cat)
         
         QMessageBox.information(self, "完成", f"已從方案 '{scheme_name}' 載入 {len(keywords)} 個單詞。")
         if self.refresh_callback:
             self.refresh_callback()
 
-    def _on_add_category_word(self, cat_id: str):
+    def _on_add_category_label(self, cat_id: str):
         txt_input = getattr(self, f"input_{cat_id}")
-        word = txt_input.text().strip()
-        if not word: return
-        self.pm.add_acv_word(cat_id, word)
-        # Also update the table if that word exists there
-        for row in range(self.word_table.rowCount()):
-            if self.word_table.item(row, 0).text() == word:
-                self.word_table.item(row, 1).setText(cat_id)
-                self.pm.category_dict[word] = cat_id
-                
+        label = txt_input.text().strip()
+        if not label: return
+        self.pm.add_acv_label(cat_id, label)
         txt_input.clear()
         self._refresh_category_row(cat_id)
         
-    def _on_remove_category_word(self, cat_id: str, word: str):
-        self.pm.remove_acv_word(cat_id, word)
-        if self.pm.category_dict.get(word) == cat_id:
-            del self.pm.category_dict[word]
-            # Update table
-            for row in range(self.word_table.rowCount()):
-                if self.word_table.item(row, 0).text() == word:
-                    self.word_table.item(row, 1).setText("")
+    def _on_remove_category_label(self, cat_id: str, label: str):
+        reply = QMessageBox.question(self, "刪除標籤", f"是否確定要刪除標籤「{label}」？此操作會取消所有單詞對此標籤的連結。", 
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.No: return
+        
+        self.pm.remove_acv_label(cat_id, label)
+        # Update table for all words that were assigned to this label
+        for row in range(self.word_table.rowCount()):
+            if self.word_table.item(row, 1).text() == label:
+                self.word_table.item(row, 1).setText("")
+                self.word_table.item(row, 1).setBackground(Qt.GlobalColor.white)
                     
         self._refresh_category_row(cat_id)
         
@@ -362,14 +393,16 @@ class ACVView(QWidget):
             QMessageBox.warning(self, "錯誤", "請輸入方案名稱")
             return
         
-        # Save current acv_dict and category_dict
-        if not hasattr(self.pm, 'acv_schemes'):
-            self.pm.acv_schemes = {}
+        # 1. Collect words currently in table
+        keyword_counts = {}
+        for row in range(self.word_table.rowCount()):
+            word = self.word_table.item(row, 0).text()
+            # We don't strictly need counts for ACV matching, but it's good for restoration
+            keyword_counts[word] = 0 
             
-        self.pm.acv_schemes[name] = {
-            "acv_dict": self.pm.acv_dict.copy(),
-            "category_dict": self.pm.category_dict.copy()
-        }
+        # 2. Save nested structure via PM
+        self.pm.save_acv_scheme(name, keyword_counts)
+        
         self.txt_scheme_name.clear()
         self._refresh_scheme_list()
         QMessageBox.information(self, "完成", f"方案 '{name}' 已儲存。")
@@ -379,16 +412,18 @@ class ACVView(QWidget):
         if not selected: return
         name = selected.text()
         
-        scheme = self.pm.acv_schemes.get(name)
-        if scheme:
-            self.pm.acv_dict = scheme["acv_dict"].copy()
-            self.pm.category_dict = scheme["category_dict"].copy()
+        try:
+            keyword_counts = self.pm.load_acv_scheme(name)
             self.refresh_view()
-            # Also update table if it's loaded
-            for row in range(self.word_table.rowCount()):
-                word = self.word_table.item(row, 0).text()
-                self.word_table.item(row, 1).setText(self.pm.category_dict.get(word, ""))
+            # Update table with the keywords that were saved in the ACV scheme
+            if keyword_counts:
+                self._update_word_table(keyword_counts)
+            
             QMessageBox.information(self, "完成", f"方案 '{name}' 已載入。")
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "載入失敗", f"無法載入 ACV 方案: {str(e)}")
 
     def _on_delete_scheme(self):
         selected = self.scheme_list.currentItem()
@@ -396,6 +431,8 @@ class ACVView(QWidget):
         name = selected.text()
         if name in self.pm.acv_schemes:
             del self.pm.acv_schemes[name]
+            if self.pm.current_acv_scheme == name:
+                self.pm.current_acv_scheme = None
             self._refresh_scheme_list()
 
     def _refresh_scheme_list(self):
@@ -412,14 +449,19 @@ class ACVView(QWidget):
             item = layout.takeAt(0)
             if item.widget(): item.widget().deleteLater()
         
-        words = self.pm.get_acv_words(cat_id)
-        for i, word in enumerate(words):
-            layout.addWidget(self._create_tag_widget(word, cat_id, i + 1))
+        labels = self.pm.get_acv_labels(cat_id)
+        for i, label in enumerate(labels):
+            layout.addWidget(self._create_tag_widget(label, cat_id, i + 1))
         layout.addStretch()
 
     def refresh_view(self):
+        """Update tags and scheme list."""
         self._refresh_category_row('A')
         self._refresh_category_row('C')
         self._refresh_category_row('V')
         self._refresh_scheme_list()
         self._refresh_token_scheme_list()
+        
+        # Auto-restore words if table is empty but PM has active keywords
+        if self.word_table.rowCount() == 0 and self.pm.active_acv_keywords:
+            self._update_word_table(self.pm.active_acv_keywords)

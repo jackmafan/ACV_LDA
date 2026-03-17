@@ -1,5 +1,5 @@
 import pandas as pd
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 import json
 import os
 from .tokenizer import Tokenizer
@@ -24,28 +24,72 @@ class ProjectManager:
         # Sentences manually locked by the user: mapping of active indices to ignore during _retokenize
         self.locked_sentences = set()
 
-        # ACV Dictionaries
-        self.acv_dict: Dict[str, List[str]] = {
-            'A': [],
-            'C': [],
-            'V': []
+        # ACV Dictionaries: Nested structure Category -> Label -> [Words]
+        self.acv_dict: Dict[str, Dict[str, List[str]]] = {
+            'A': {},
+            'C': {},
+            'V': {}
         }
         self.schemes: Dict[str, Dict] = {}
         self.acv_schemes: Dict[str, Dict] = {}
+        self.active_acv_keywords: Dict[str, int] = {}
+        self.current_acv_scheme: Optional[str] = None
         
-    def get_acv_words(self, category_type: str) -> List[str]:
-        """Get the list of words for an A, C, or V category."""
-        return self.acv_dict.get(category_type, [])
+    def get_acv_labels(self, category_type: str) -> List[str]:
+        """Get the list of labels (tags) for an A, C, or V category."""
+        return list(self.acv_dict.get(category_type, {}).keys())
+
+    def get_acv_words_for_label(self, category_type: str, label: str) -> List[str]:
+        """Get the list of words assigned to a specific label."""
+        return self.acv_dict.get(category_type, {}).get(label, [])
         
+    def add_acv_label(self, category_type: str, label: str):
+        """Add a new concept label to a category."""
+        if category_type in self.acv_dict and label not in self.acv_dict[category_type]:
+            self.acv_dict[category_type][label] = []
+            
+    def remove_acv_label(self, category_type: str, label: str):
+        """Remove a concept label and all its word assignments."""
+        if category_type in self.acv_dict and label in self.acv_dict[category_type]:
+            # Unassign all words first
+            words = list(self.acv_dict[category_type][label])
+            for word in words:
+                if word in self.category_dict:
+                    del self.category_dict[word]
+            del self.acv_dict[category_type][label]
+
+    def assign_word_to_label(self, category_type: str, label: str, word: str):
+        """Assign a word to a specific label. Removes previous assignment if exists."""
+        # 1. Unassign from previous label if any
+        self.unassign_word(word)
+        
+        # 2. Add to new label
+        if category_type in self.acv_dict and label in self.acv_dict[category_type]:
+            if word not in self.acv_dict[category_type][label]:
+                self.acv_dict[category_type][label].append(word)
+            self.category_dict[word] = {"cat": category_type, "label": label}
+
+    def unassign_word(self, word: str):
+        """Remove a word from whatever label it is currently assigned to."""
+        if word in self.category_dict:
+            info = self.category_dict[word]
+            # Handle both old string format and new dict format for migration/safety
+            if isinstance(info, dict):
+                cat = info.get("cat")
+                lbl = info.get("label")
+                if cat in self.acv_dict and lbl in self.acv_dict[cat]:
+                    if word in self.acv_dict[cat][lbl]:
+                        self.acv_dict[cat][lbl].remove(word)
+            del self.category_dict[word]
+            
+    # Legacy-ish helpers for UI
     def add_acv_word(self, category_type: str, word: str):
-        """Add a word to an ACV category list."""
-        if category_type in self.acv_dict and word not in self.acv_dict[category_type]:
-            self.acv_dict[category_type].append(word)
+        # Fallback: if adding a word directly, create a label with its own name
+        self.add_acv_label(category_type, word)
+        self.assign_word_to_label(category_type, word, word)
             
     def remove_acv_word(self, category_type: str, word: str):
-        """Remove a word from an ACV category list."""
-        if category_type in self.acv_dict and word in self.acv_dict[category_type]:
-            self.acv_dict[category_type].remove(word)
+        self.unassign_word(word)
 
     def load_raw_data(self, df: pd.DataFrame, text_column: str):
         """Load raw pandas dataframe and specify which column contains the text."""
@@ -232,6 +276,58 @@ class ProjectManager:
             
         # Update word counts based on the restored tokenized_data and tokenizer
         self._update_word_counts()
+
+    def save_acv_scheme(self, name: str, keyword_counts: Dict[str, int]):
+        """Save current ACV tagging state as a scheme, including a keyword snapshot."""
+        if not hasattr(self, 'acv_schemes'):
+            self.acv_schemes = {}
+        self.acv_schemes[name] = {
+            "acv_dict": self.acv_dict.copy(),
+            "category_dict": self.category_dict.copy(),
+            "keyword_counts": keyword_counts
+        }
+        self.current_acv_scheme = name
+
+    def load_acv_scheme(self, name: str) -> Dict[str, int]:
+        """Load an ACV tagging scheme and return its keyword snapshot."""
+        if not hasattr(self, 'acv_schemes') or name not in self.acv_schemes:
+            raise ValueError(f"找不到 ACV 方案: {name}")
+            
+        self.current_acv_scheme = name
+        scheme = self.acv_schemes[name]
+        raw_acv = scheme.get("acv_dict", {'A': {}, 'C': {}, 'V': {}})
+        raw_cat = scheme.get("category_dict", {})
+        keyword_counts = scheme.get("keyword_counts", {})
+        
+        # Migrate acv_dict (copying the same logic from load_project)
+        new_acv = {}
+        for cat in ['A', 'C', 'V']:
+            val = raw_acv.get(cat, {})
+            if isinstance(val, list):
+                # Legacy List -> One Label per Word
+                new_acv[cat] = {word: [word] for word in val}
+            else:
+                new_acv[cat] = val
+        self.acv_dict = new_acv
+
+        # Migrate category_dict
+        new_cat = {}
+        for word, info in raw_cat.items():
+            if isinstance(info, str):
+                # Old format: word -> 'A'
+                found = False
+                for cat_id in ['A', 'C', 'V']:
+                    if cat_id == info:
+                        for lbl, words in self.acv_dict.get(cat_id, {}).items():
+                            if word in words:
+                                new_cat[word] = {"cat": cat_id, "label": lbl}
+                                found = True
+                                break
+                if not found: pass
+            else:
+                new_cat[word] = info
+        self.category_dict = new_cat
+        return keyword_counts
                 
     def get_project_state(self) -> Dict:
         """Return a summary of the current project state."""
@@ -248,6 +344,14 @@ class ProjectManager:
         if not filepath.endswith('.aproj'):
             filepath += '.aproj'
             
+        # If we are in an active ACV scheme, update it before saving the project
+        if hasattr(self, 'current_acv_scheme') and self.current_acv_scheme in self.acv_schemes:
+            self.acv_schemes[self.current_acv_scheme].update({
+                "acv_dict": self.acv_dict.copy(),
+                "category_dict": self.category_dict.copy(),
+                "keyword_counts": self.active_acv_keywords.copy()
+            })
+            
         state = {
             "text_column": self.text_column,
             "category_dict": self.category_dict,
@@ -256,7 +360,9 @@ class ProjectManager:
             "edited_tokenized_data": [list(x) for x in self.tokenized_data] if self.tokenized_data is not None else None,
             "schemes": getattr(self, 'schemes', {}),
             "acv_dict": self.acv_dict,
-            "acv_schemes": self.acv_schemes
+            "acv_schemes": self.acv_schemes,
+            "active_acv_keywords": self.active_acv_keywords,
+            "current_acv_scheme": self.current_acv_scheme
         }
         
         # Save raw data as a list of dictionaries if it exists
@@ -278,10 +384,38 @@ class ProjectManager:
             state = json.load(f)
             
         self.text_column = state.get("text_column", "")
-        self.category_dict = state.get("category_dict", {})
+        self.acv_dict = state.get("acv_dict", {'A': {}, 'C': {}, 'V': {}})
         self.schemes = state.get("schemes", {})
         self.acv_schemes = state.get("acv_schemes", {})
-        self.acv_dict = state.get("acv_dict", {'A': [], 'C': [], 'V': []})
+        self.active_acv_keywords = state.get("active_acv_keywords", {})
+        self.current_acv_scheme = state.get("current_acv_scheme")
+        
+        # Migration: Check if acv_dict is in old format (Category -> List of Words)
+        for cat in ['A', 'C', 'V']:
+            if cat in self.acv_dict and isinstance(self.acv_dict[cat], list):
+                # Convert old list of words into Labels (one label per word)
+                old_list = self.acv_dict[cat]
+                self.acv_dict[cat] = {word: [word] for word in old_list}
+                
+        # Migration for category_dict
+        loaded_cat_dict = state.get("category_dict", {})
+        self.category_dict = {}
+        for word, info in loaded_cat_dict.items():
+            if isinstance(info, str):
+                # Old format: word -> 'A'
+                # Find which label in acv_dict[info] contains this word
+                found = False
+                if info in self.acv_dict:
+                    for lbl, words in self.acv_dict[info].items():
+                        if word in words:
+                            self.category_dict[word] = {"cat": info, "label": lbl}
+                            found = True
+                            break
+                if not found:
+                    # Just skip or assign default
+                    pass
+            else:
+                self.category_dict[word] = info
         
         # Restore raw data and retokenize
         records = state.get("raw_data_records")
