@@ -1,10 +1,11 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, 
     QScrollArea, QLineEdit, QSplitter, QFrame, QMessageBox, QSizePolicy,
-    QTableWidget, QTableWidgetItem, QHeaderView, QListWidget, QAbstractItemView
+    QTableWidget, QTableWidgetItem, QHeaderView, QListWidget, QAbstractItemView, QTabWidget, QFileDialog
 )
-from typing import Dict
+from typing import Dict, List
 from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QPainter, QColor, QFont
 from ..core.project_manager import ProjectManager
 
 class ACVView(QWidget):
@@ -33,7 +34,13 @@ class ACVView(QWidget):
     def init_ui(self):
         main_layout = QVBoxLayout(self)
         
-        # Main Vertical Splitter
+        self.tabs = QTabWidget()
+        
+        # --- Tab 1: Category Labeling Management ---
+        self.tab_tagging = QWidget()
+        tagging_layout = QVBoxLayout(self.tab_tagging)
+        
+        # Main Vertical Splitter (moved inside tab)
         self.main_splitter = QSplitter(Qt.Orientation.Vertical)
         
         # Consistent dark styling for management panels
@@ -178,7 +185,28 @@ class ACVView(QWidget):
         self.main_splitter.addWidget(top_widget)
         self.main_splitter.addWidget(bottom_widget)
         
-        main_layout.addWidget(self.main_splitter)
+        tagging_layout.addWidget(self.main_splitter)
+        
+        # --- Tab 2: Analysis Results (Implication Matrix) ---
+        self.tab_analysis = QWidget()
+        analysis_main_layout = QVBoxLayout(self.tab_analysis)
+        analysis_main_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        lbl_hint = QLabel("<b>共現分析與蘊含矩陣 (Implication Matrix)</b>")
+        lbl_hint.setStyleSheet("font-size: 14pt; margin-bottom: 20px;")
+        analysis_main_layout.addWidget(lbl_hint)
+        
+        self.btn_export_matrix = QPushButton("輸出蘊含矩陣 (.csv)")
+        self.btn_export_matrix.setFixedSize(300, 60)
+        self.btn_export_matrix.setStyleSheet("background-color: #2c3e50; font-weight: bold; font-size: 12pt; color: white; border-radius: 8px;")
+        self.btn_export_matrix.clicked.connect(self._on_export_matrix)
+        analysis_main_layout.addWidget(self.btn_export_matrix)
+        
+        analysis_main_layout.addStretch()
+        
+        self.tabs.addTab(self.tab_analysis, "2. 關聯分析分析")
+        
+        main_layout.addWidget(self.tabs)
 
     def _create_category_row(self, title: str, bg_color: str, fg_color: str, cat_id: str) -> QWidget:
         row_widget = QWidget()
@@ -213,7 +241,7 @@ class ACVView(QWidget):
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setFixedHeight(50)
-        scroll_area.setStyleSheet("background-color: #f7f7f7; border: 1px solid #ddd; border-radius: 4px; margin-left: 5px;")
+        #scroll_area.setStyleSheet(" border: 1px solid #ddd; border-radius: 4px; margin-left: 5px;")
         
         tags_container = QWidget()
         tags_layout = QHBoxLayout(tags_container)
@@ -352,6 +380,10 @@ class ACVView(QWidget):
             self.pm.load_scheme(scheme_name)
             keywords = self.pm.get_valid_keywords()
             
+            # Capture snapshot for ACV consistency
+            if self.pm.tokenized_data is not None:
+                self.pm.acv_tokenized_snapshot = [list(tokens) for tokens in self.pm.tokenized_data]
+            
             self.pm.acv_dict = current_acv_dict
             self.pm.category_dict = current_cat_dict
             
@@ -362,6 +394,7 @@ class ACVView(QWidget):
             return
         
         QMessageBox.information(self, "完成", f"已從方案 '{scheme_name}' 載入 {len(keywords)} 個單詞。")
+        #self._refresh_v_list()
         if self.refresh_callback:
             self.refresh_callback()
 
@@ -438,6 +471,34 @@ class ACVView(QWidget):
     def _refresh_scheme_list(self):
         self.scheme_list.clear()
         self.scheme_list.addItems(self.pm.acv_schemes.keys())
+
+    def _on_export_matrix(self):
+        """Handle the co-occurrence matrix calculation and export."""
+        if self.pm.tokenized_data is None:
+            QMessageBox.warning(self, "警告", "尚未載入任何分詞數據（請先到分詞介面執行分詞或載入），無法分析。")
+            return
+            
+        try:
+            # 1. Calculate Matrix
+            matrix_df = self.pm.calculate_acv_matrix()
+            
+            # 2. File save dialog
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "儲存蘊含矩陣", "", "CSV Files (*.csv)"
+            )
+            
+            if file_path:
+                if not file_path.endswith('.csv'):
+                    file_path += '.csv'
+                
+                # Export to CSV with UTF-8-SIG for Excel compatibility
+                matrix_df.to_csv(file_path, encoding='utf-8-sig')
+                QMessageBox.information(self, "成功", f"蘊含矩陣已成功匯出至：\n{file_path}")
+                
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "錯誤", f"匯出失敗：{str(e)}")
 
     def _refresh_token_scheme_list(self):
         self.token_scheme_list.clear()

@@ -34,6 +34,7 @@ class ProjectManager:
         self.acv_schemes: Dict[str, Dict] = {}
         self.active_acv_keywords: Dict[str, int] = {}
         self.current_acv_scheme: Optional[str] = None
+        self.acv_tokenized_snapshot: Optional[List[List[str]]] = None
         
     def get_acv_labels(self, category_type: str) -> List[str]:
         """Get the list of labels (tags) for an A, C, or V category."""
@@ -284,7 +285,8 @@ class ProjectManager:
         self.acv_schemes[name] = {
             "acv_dict": self.acv_dict.copy(),
             "category_dict": self.category_dict.copy(),
-            "keyword_counts": keyword_counts
+            "keyword_counts": keyword_counts,
+            "tokenized_snapshot": self.acv_tokenized_snapshot
         }
         self.current_acv_scheme = name
 
@@ -297,6 +299,7 @@ class ProjectManager:
         scheme = self.acv_schemes[name]
         raw_acv = scheme.get("acv_dict", {'A': {}, 'C': {}, 'V': {}})
         raw_cat = scheme.get("category_dict", {})
+        self.acv_tokenized_snapshot = scheme.get("tokenized_snapshot")
         keyword_counts = scheme.get("keyword_counts", {})
         
         # Migrate acv_dict (copying the same logic from load_project)
@@ -328,6 +331,98 @@ class ProjectManager:
                 new_cat[word] = info
         self.category_dict = new_cat
         return keyword_counts
+
+    def calculate_acv_matrix(self) -> pd.DataFrame:
+        """
+        Calculate co-occurrence scores between ACV labels.
+        Logic from reference:
+        - Adjacent in same sentence: 1.0
+        - Same sentence but not adjacent: 0.01
+        
+        Rows: A labels, C labels
+        Columns: C labels, V labels
+        """
+        # 1. Gather all active labels
+        a_lbls = [f"A:{l}" for i,l in enumerate(self.acv_dict.get('A', {}).keys(),start=1)]
+        c_lbls = [f"C:{l}" for i,l in enumerate(self.acv_dict.get('C', {}).keys(),start=1)]
+        v_lbls = [f"V:{l}" for i,l in enumerate(self.acv_dict.get('V', {}).keys(),start=1)]
+
+        a_lbls_new = [f"A{i}:{l}" for i,l in enumerate(self.acv_dict.get('A', {}).keys(),start=1)]
+        c_lbls_new = [f"C{i}:{l}" for i,l in enumerate(self.acv_dict.get('C', {}).keys(),start=1)]
+        v_lbls_new = [f"V{i}:{l}" for i,l in enumerate(self.acv_dict.get('V', {}).keys(),start=1)]
+        
+        row_headers = a_lbls + c_lbls
+        col_headers = c_lbls + v_lbls
+        
+        # Initialize matrix
+        matrix = pd.DataFrame(0.0, index=row_headers, columns=col_headers)
+        
+        # Use snapshot if available, otherwise fallback to current tokenized_data
+        data_to_analyze = self.acv_tokenized_snapshot if self.acv_tokenized_snapshot is not None else self.tokenized_data
+        
+        if data_to_analyze is None:
+            return matrix
+            
+        # 2. Analyze co-occurrence in each sentence
+        for tokens in data_to_analyze:
+            if not tokens: continue
+            
+            # Map tokens to their labels
+            sentence_labels = []
+            for t in tokens:
+                word = str(t)
+                if word in self.category_dict:
+                    entry = self.category_dict[word]
+                    if isinstance(entry, dict) and 'cat' in entry and 'label' in entry:
+                        sentence_labels.append(f"{entry['cat']}:{entry['label']}")
+            if len(sentence_labels) <= 1:
+                continue
+                
+            # Compare every pair in the sentence
+            for i in range(len(sentence_labels)):
+                for j in range(i + 1, len(sentence_labels)):
+                    l1 = sentence_labels[i]
+                    l2 = sentence_labels[j]
+                    
+                    if l1 == l2: continue
+                    
+                    # Determine directional pair
+                    cat1 = l1[0]
+                    cat2 = l2[0]
+                    
+                    row_key = None
+                    col_key = None
+                    
+                    # Weight based on adjacency
+                    score = 1.0 if j == i + 1 else 0.01
+                    
+                    # Logic: Rows = A, C; Cols = C, V
+                    if cat1 == 'A':
+                        row_key = l1
+                        if cat2 in ['C', 'V']: col_key = l2
+                    elif cat1 == 'C':
+                        if cat2 == 'A':
+                            row_key = l2
+                            col_key = l1
+                        elif cat2 == 'C':
+                            row_key = l1
+                            col_key = l2
+                        elif cat2 == 'V':
+                            row_key = l1
+                            col_key = l2
+                    elif cat1 == 'V':
+                        col_key = l1
+                        if cat2 in ['A', 'C']: row_key = l2
+
+                    # Apply score
+                    if row_key and col_key and row_key in matrix.index and col_key in matrix.columns:
+                        matrix.at[row_key, col_key] += score
+        
+        # Use direct assignment to replace headers with the numbered versions (e.g. A1:Label)
+        matrix.index = a_lbls_new + c_lbls_new
+        matrix.columns = c_lbls_new + v_lbls_new
+        
+        return matrix
                 
     def get_project_state(self) -> Dict:
         """Return a summary of the current project state."""
@@ -349,7 +444,8 @@ class ProjectManager:
             self.acv_schemes[self.current_acv_scheme].update({
                 "acv_dict": self.acv_dict.copy(),
                 "category_dict": self.category_dict.copy(),
-                "keyword_counts": self.active_acv_keywords.copy()
+                "keyword_counts": self.active_acv_keywords.copy(),
+                "tokenized_snapshot": self.acv_tokenized_snapshot
             })
             
         state = {
@@ -362,7 +458,8 @@ class ProjectManager:
             "acv_dict": self.acv_dict,
             "acv_schemes": self.acv_schemes,
             "active_acv_keywords": self.active_acv_keywords,
-            "current_acv_scheme": self.current_acv_scheme
+            "current_acv_scheme": self.current_acv_scheme,
+            "acv_tokenized_snapshot": self.acv_tokenized_snapshot
         }
         
         # Save raw data as a list of dictionaries if it exists
@@ -389,6 +486,7 @@ class ProjectManager:
         self.acv_schemes = state.get("acv_schemes", {})
         self.active_acv_keywords = state.get("active_acv_keywords", {})
         self.current_acv_scheme = state.get("current_acv_scheme")
+        self.acv_tokenized_snapshot = state.get("acv_tokenized_snapshot")
         
         # Migration: Check if acv_dict is in old format (Category -> List of Words)
         for cat in ['A', 'C', 'V']:
