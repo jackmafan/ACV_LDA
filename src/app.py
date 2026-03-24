@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, 
     QPushButton, QLabel, QFileDialog, QMessageBox, QStackedWidget
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt
 from .core.project_manager import ProjectManager
 from .gui.tokenization_view import TokenizationView
 from .gui.acv_view import ACVView
@@ -11,17 +11,15 @@ from .gui.acv_view import ACVView
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("ACV 分析系統")
-        self.resize(1920, 1080) # 4K default size
+        self.setWindowTitle("ACV 分析系統 (New Architecture)")
+        self.resize(1920, 1080) 
 
         self.pm = ProjectManager()
-        self.current_project_file = None
 
         self.init_ui()
         self.update_ui_state()
 
     def init_ui(self):
-        # Central widget and main layout
         central_widget = QWidget()
         central_widget.setObjectName("CentralWidget")
         central_widget.setStyleSheet("QWidget#CentralWidget { background-color: #ffffff; }")
@@ -32,7 +30,7 @@ class MainWindow(QMainWindow):
 
         # --- Top Toolbar ---
         toolbar_container = QWidget()
-        toolbar_container.setObjectName("ToolbarContainer")
+        #toolbar_container.setStyleSheet("background-color: #f0f0f0; border-bottom: 1px solid #c0c0c0;")
         toolbar_container.setStyleSheet("""
             #ToolbarContainer {
                 background-color: #f0f0f0; 
@@ -74,28 +72,20 @@ class MainWindow(QMainWindow):
 
         main_layout.addWidget(toolbar_container)
 
-        # --- Body Layout (Sidebar + Content) ---
+        # --- Body ---
         body_container = QWidget()
         body_layout = QHBoxLayout(body_container)
         body_layout.setContentsMargins(0, 0, 0, 0)
         body_layout.setSpacing(0)
 
-        # Left Sidebar
+        # Sidebar
         self.sidebar = QWidget()
-        self.sidebar.setObjectName("Sidebar")
         self.sidebar.setFixedWidth(220)
-        self.sidebar.setStyleSheet("""
-            QWidget#Sidebar {
-                background-color: #f5f5f5;
-                border-right: 1px solid #c0c0c0;
-            }
-        """)
+        self.sidebar.setStyleSheet("background-color: #f5f5f5; border-right: 1px solid #c0c0c0;")
         sidebar_layout = QVBoxLayout(self.sidebar)
         sidebar_layout.setContentsMargins(0, 20, 0, 20)
-        sidebar_layout.setSpacing(0)
         sidebar_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        # Navigation Buttons style
         nav_btn_style = """
             QPushButton {
                 background-color: transparent;
@@ -121,7 +111,6 @@ class MainWindow(QMainWindow):
                 margin-right: -1px;  /* Covers the sidebar's right border to connect with main content */
             }
         """
-
         self.btn_nav_tokenize = QPushButton("1. 建立分詞表")
         self.btn_nav_tokenize.setStyleSheet(nav_btn_style)
         self.btn_nav_tokenize.setCheckable(True)
@@ -131,141 +120,89 @@ class MainWindow(QMainWindow):
         self.btn_nav_acv = QPushButton("2. ACV 分析")
         self.btn_nav_acv.setStyleSheet(nav_btn_style)
         self.btn_nav_acv.setCheckable(True)
-        self.btn_nav_acv.clicked.connect(lambda: self.switch_view(1))
+        self.btn_nav_acv.clicked.connect(lambda: self.switch_view(1)) # Placeholder logic
         sidebar_layout.addWidget(self.btn_nav_acv)
-
-        self.btn_nav_lda = QPushButton("3. LDA 分析")
-        self.btn_nav_lda.setStyleSheet(nav_btn_style)
-        self.btn_nav_lda.setCheckable(True)
-        self.btn_nav_lda.clicked.connect(lambda: self.switch_view(2))
-        sidebar_layout.addWidget(self.btn_nav_lda)
         
-        # Group buttons visually (but we'll manage checked state manually)
-        self.nav_buttons = [self.btn_nav_tokenize, self.btn_nav_acv, self.btn_nav_lda]
-
         body_layout.addWidget(self.sidebar)
 
-        # Right Content Area (QStackedWidget)
+        # Content
         self.content_stack = QStackedWidget()
-        
-        # Add views
         self.tokenize_view = TokenizationView(self.pm, self.refresh_all_views)
-        self.content_stack.addWidget(self.tokenize_view) # Index 0
+        self.content_stack.addWidget(self.tokenize_view) 
         
-        # Add ACV View
-        self.acv_view = ACVView(self.pm, parent=self)
-        self.acv_view.refresh_callback = self.refresh_all_views
-        self.content_stack.addWidget(self.acv_view) # Index 1
-        
-        lda_placeholder = QLabel("LDA 分析介面建置中...")
-        lda_placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.content_stack.addWidget(lda_placeholder) # Index 2
+        self.acv_view = ACVView(self.pm)
+        self.content_stack.addWidget(self.acv_view) 
 
         body_layout.addWidget(self.content_stack, stretch=1)
-        
         main_layout.addWidget(body_container, stretch=1)
 
     def update_ui_state(self):
-        """Enable/Disable UI elements based on project presence and state."""
-        has_project = self.current_project_file is not None or self.pm.raw_data is not None
-
-        if has_project:
-            self.btn_save.setEnabled(True)
-            self.btn_nav_tokenize.setEnabled(True)
-            filename = os.path.basename(self.current_project_file) if self.current_project_file else "未儲存"
-            self.lbl_project_status.setText(f"當前專案: {filename}")
-            
-            # ACV and LDA are unlocked only after tokenization data exists
-            if self.pm.tokenized_data is not None and not self.pm.tokenized_data.empty:
-                self.btn_nav_acv.setEnabled(True)
-                self.btn_nav_lda.setEnabled(True)
-            else:
-                self.btn_nav_acv.setEnabled(False)
-                self.btn_nav_lda.setEnabled(False)
-        else:
-            self.btn_save.setEnabled(False)
-            self.btn_nav_tokenize.setEnabled(False)
-            self.btn_nav_acv.setEnabled(False)
-            self.btn_nav_lda.setEnabled(False)
-            self.lbl_project_status.setText("未載入專案")
+        has_data = len(self.pm.raw_data) > 0
+        self.btn_save.setEnabled(has_data)
+        
+        # 斷詞頁面應該永遠保持開啟，因為它是資料載入的入口
+        self.btn_nav_tokenize.setEnabled(True)
+        # 分析頁面則需要有資料才能進入
+        self.btn_nav_acv.setEnabled(has_data)
+        
+        filename = os.path.basename(self.pm.getProjectPath) if self.pm.getProjectPath else "未儲存"
+        self.lbl_project_status.setText(f"當前專案: {filename}")
 
     def switch_view(self, index):
-        """Switch the stacked widget view."""
         self.content_stack.setCurrentIndex(index)
-        
-        # Update checked state for visually active tab
-        for i, btn in enumerate(self.nav_buttons):
-            if i == index:
-                btn.setChecked(True)
-            else:
-                btn.setChecked(False)
-                
-        # Call refresh method if the widget has one
-        current_widget = self.content_stack.currentWidget()
-        if hasattr(current_widget, 'refresh_view'):
-            current_widget.refresh_view()
+        self.btn_nav_tokenize.setChecked(index == 0)
+        self.btn_nav_acv.setChecked(index == 1)
 
     def refresh_all_views(self):
-        """Force all tabs to refresh their data from the ProjectManager."""
+        """Called when significant global state changes (like new project loaded)."""
         self.update_ui_state()
-        for i in range(self.content_stack.count()):
-            widget = self.content_stack.widget(i)
-            if hasattr(widget, 'refresh_view'):
-                widget.refresh_view()
+        self.tokenize_view.refresh_view()
+        self.acv_view.refresh_view()
 
     def action_new_project(self):
-        """Create a new project workspace."""
-        if self.pm.raw_data is not None:
-            reply = QMessageBox.question(self, "警告", "這會清空目前的專案，確定繼續？", 
+        if len(self.pm.raw_data) > 0:
+            reply = QMessageBox.question(self, "警告", "這會重置目前數據，確定繼續？", 
                                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-            if reply == QMessageBox.StandardButton.No:
-                return
+            if reply == QMessageBox.StandardButton.No: return
         
-        filepath, _ = QFileDialog.getSaveFileName(
-            self, "建立新專案", "", "ACV Project Files (*.aproj);;All Files (*)"
-        )
-        
+        filepath, _ = QFileDialog.getSaveFileName(self, "建立新專案", "", "ACV Project Files (*.aproj)")
         if filepath:
-            self.pm = ProjectManager() # Reset
-            
-            # Recreate views to bind new PM
+            # 自動補足副檔名
+            if not filepath.lower().endswith('.aproj'):
+                filepath += '.aproj'
+                
+            self.pm = ProjectManager() 
+            self.pm.createProject(filepath) # Set initial path
             self.tokenize_view.pm = self.pm
-            self.acv_view.pm = self.pm
-            
-            self.current_project_file = filepath
-            self.pm.save_project(self.current_project_file) # Initialize file
+            self.pm.saveProject()
             self.update_ui_state()
             self.switch_view(0)
 
     def action_open_project(self):
-        """Open an existing .aproj file."""
-        filepath, _ = QFileDialog.getOpenFileName(
-            self, "開啟專案", "", "ACV Project Files (*.aproj);;All Files (*)"
-        )
-        
+        filepath, _ = QFileDialog.getOpenFileName(self, "開啟專案", "", "ACV Project Files (*.aproj)")
         if filepath:
             try:
-                self.pm = ProjectManager()
-                self.pm.load_project(filepath)
-                
-                # Update views with new PM
+                self.pm.loadProject(filepath)
                 self.tokenize_view.pm = self.pm
-                self.acv_view.pm = self.pm
-                
-                self.current_project_file = filepath
                 self.update_ui_state()
-                self.switch_view(0)
+                self.refresh_all_views()
                 QMessageBox.information(self, "成功", "專案載入成功！")
             except Exception as e:
-                QMessageBox.critical(self, "錯誤", f"載入專案失敗:\n{str(e)}")
+                QMessageBox.critical(self, "錯誤", f"載入失敗: {e}")
 
     def action_save_project(self):
-        """Save the current project state."""
-        if self.current_project_file:
-            try:
-                self.pm.save_project(self.current_project_file)
-                QMessageBox.information(self, "成功", "專案儲存成功！")
-            except Exception as e:
-                QMessageBox.critical(self, "錯誤", f"儲存專案失敗:\n{str(e)}")
-        else:
-            self.action_new_project() # Redirect to 'save as' essentially
+        filepath = self.pm.getProjectPath
+        if not filepath:
+            self.action_new_project()
+            return
+            
+        # 儲存時再次檢查副檔名 (如果是從 ProjectManager 拿到的舊路徑可能沒副檔名)
+        if not filepath.lower().endswith('.aproj'):
+            filepath += '.aproj'
+
+        try:
+            self.pm.saveProject()
+            QMessageBox.information(self, "成功", "專案儲存成功！")
+            self.update_ui_state()
+        except Exception as e:
+            QMessageBox.critical(self, "錯誤", f"儲存失敗: {e}")

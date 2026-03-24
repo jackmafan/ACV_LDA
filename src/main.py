@@ -11,8 +11,7 @@ if platform.system() == "Linux":
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from PyQt6.QtWidgets import QApplication
-from PyQt6.QtGui import QFont
-from src.app import MainWindow
+from src_new.app import MainWindow
 
 def main():
     app = QApplication(sys.argv)
