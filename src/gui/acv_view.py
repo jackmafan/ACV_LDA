@@ -2,12 +2,13 @@ import pandas as pd
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, 
     QScrollArea, QLineEdit, QSplitter, QFrame, QMessageBox, QSizePolicy,
-    QTableWidget, QTableWidgetItem, QHeaderView, QListWidget, QAbstractItemView, QTabWidget, QFileDialog
+    QTableWidget, QTableWidgetItem, QHeaderView, QListWidget, QAbstractItemView, QTabWidget, QFileDialog,
+    QCheckBox, QGroupBox
 )
 from typing import Dict, List
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QPainter, QColor, QFont
-from src_new.core.project_manager import ProjectManager
+from src.core.project_manager import ProjectManager
 
 class ACVView(QWidget):
     """
@@ -133,22 +134,67 @@ class ACVView(QWidget):
         # --- Tab 2: Analysis Results (Implication Matrix) ---
         self.tab_analysis = QWidget()
         analysis_main_layout = QVBoxLayout(self.tab_analysis)
-        analysis_main_layout.setAlignment(Qt.AlignmentFlag.AlignCenter) 
         
         lbl_hint = QLabel("<b>共現分析與蘊含矩陣 (Implication Matrix)</b>")
-        lbl_hint.setStyleSheet("font-size: 14pt; margin-bottom: 20px; color: white;")
+        lbl_hint.setStyleSheet("font-size: 14pt; margin-bottom: 10px; color: white;")
+        lbl_hint.setAlignment(Qt.AlignmentFlag.AlignCenter)
         analysis_main_layout.addWidget(lbl_hint)
         
+        self.matrix_preview_table = QTableWidget()
+        self.matrix_preview_table.setStyleSheet(side_panel_style)
+        analysis_main_layout.addWidget(self.matrix_preview_table, stretch=1)
+        
+        # --- Adding Graphviz section ---
+        self.graphviz_group = QGroupBox("匯出 ACV 關聯圖 (Graphviz)")
+        self.graphviz_group.setStyleSheet("color: white; font-weight: bold; font-size: 11pt; margin-top: 10px;")
+        gv_layout = QVBoxLayout(self.graphviz_group)
+        
+        lbl_gv_hint = QLabel("勾選下方要在圖中分析與顯示的分類標籤 (A, C, V)：")
+        lbl_gv_hint.setStyleSheet("font-weight: normal; color: #dddddd;")
+        gv_layout.addWidget(lbl_gv_hint)
+        
+        self.v_tags_scroll = QScrollArea()
+        self.v_tags_scroll.setWidgetResizable(True)
+        self.v_tags_scroll.setFixedHeight(60)
+        self.v_tags_scroll.setStyleSheet("background-color: #1e1e1e; border: 1px solid #3d3d3d;")
+        
+        self.v_tags_container = QWidget()
+        self.v_tags_layout = QHBoxLayout(self.v_tags_container)
+        self.v_tags_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.v_tags_scroll.setWidget(self.v_tags_container)
+        gv_layout.addWidget(self.v_tags_scroll)
+        
+        self.btn_export_gv = QPushButton("匯出向量圖 (.pdf)")
+        self.btn_export_gv.setFixedSize(200, 40)
+        self.btn_export_gv.setStyleSheet("background-color: #f39c12; font-weight: bold; font-size: 12pt; color: white; border-radius: 8px;")
+        self.btn_export_gv.clicked.connect(self._on_export_gv)
+        
+        gv_btn_layout = QHBoxLayout()
+        gv_btn_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        gv_btn_layout.addWidget(self.btn_export_gv)
+        gv_layout.addLayout(gv_btn_layout)
+        
+        analysis_main_layout.addWidget(self.graphviz_group)
+        
+        btn_layout = QHBoxLayout()
+        btn_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        
+        self.btn_preview_matrix = QPushButton("預覽矩陣")
+        self.btn_preview_matrix.setFixedSize(200, 50)
+        self.btn_preview_matrix.setStyleSheet("background-color: #2e7d32; font-weight: bold; font-size: 12pt; color: white; border-radius: 8px;")
+        self.btn_preview_matrix.clicked.connect(self._on_preview_matrix)
+        btn_layout.addWidget(self.btn_preview_matrix)
+        
         self.btn_export_matrix = QPushButton("輸出蘊含矩陣 (.csv)")
-        self.btn_export_matrix.setFixedSize(300, 60)
+        self.btn_export_matrix.setFixedSize(200, 50)
         self.btn_export_matrix.setStyleSheet("background-color: #2c3e50; font-weight: bold; font-size: 12pt; color: white; border-radius: 8px;")
         self.btn_export_matrix.clicked.connect(self._on_export_matrix)
-        analysis_main_layout.addWidget(self.btn_export_matrix)
+        btn_layout.addWidget(self.btn_export_matrix)
         
-        analysis_main_layout.addStretch()
+        analysis_main_layout.addLayout(btn_layout)
         
-        self.tabs.addTab(self.tab_tagging, "1. 分類標記管理")
-        self.tabs.addTab(self.tab_analysis, "2. 關聯分析分析")
+        self.tabs.addTab(self.tab_tagging, "a. 分類標記管理")
+        self.tabs.addTab(self.tab_analysis, "b. 關聯分析分析")
         
         main_layout.addWidget(self.tabs)
 
@@ -243,20 +289,20 @@ class ACVView(QWidget):
         
         txt_input = refs['input']
         label_text = txt_input.text().strip()
-        print(f"DEBUG: _on_add_category_label called for {cat_id} with text: '{label_text}'")
+        #print(f"DEBUG: _on_add_category_label called for {cat_id} with text: '{label_text}'")
         if not label_text: return
         
         new_label = self.pm.addACVLabel(cat_id, label_text)
-        print(f"DEBUG: Label added to PM: {new_label}")
+        #print(f"DEBUG: Label added to PM: {new_label}")
         
         txt_input.clear()
         import sys
-        print(f"DEBUG: Text cleared, starting refresh...", flush=True)
+        #print(f"DEBUG: Text cleared, starting refresh...", flush=True)
         sys.stdout.flush()
         try:
             self._refresh_category_rows()
         except Exception as e:
-            print(f"CRITICAL ERROR in _refresh_category_rows: {e}", flush=True)
+            #print(f"CRITICAL ERROR in _refresh_category_rows: {e}", flush=True)
             import traceback
             traceback.print_exc()
             QMessageBox.critical(self, "刷新錯誤", f"在刷新時發生錯誤: {str(e)}")
@@ -366,30 +412,22 @@ class ACVView(QWidget):
             self.word_table.setItem(row_idx, 1, item_cat)
 
     def _refresh_category_rows(self):
-        #print("DEBUG: Executing _refresh_category_rows...", flush=True)
-
         for cat_id in ['A', 'C', 'V']:
             refs = self.acv_ui_refs.get(cat_id)
-            # if not refs:
-            #     print(f"DEBUG: Skipping {cat_id} because refs not found", flush=True)
-            #     continue
+            if not refs:
+                continue
                 
             layout = refs['layout']
             container = refs['container']
             
-            #print(f"DEBUG: Clearing layout for {cat_id}", flush=True)
             for i in reversed(range(layout.count())):
                 item = layout.takeAt(i)
                 if item.widget():
                     item.widget().deleteLater()
             
             try:
-                # 測試屬性存取  
                 ad = self.pm.acv_dict
-                #print(f"DEBUG: PM.acv_dict type: {type(ad)}", flush=True)
-                
                 labels = ad[cat_id]['labels']
-                #print(f"DEBUG: Refreshing {cat_id}, labels count: {len(labels)}", flush=True)
                 
                 for raw_label in labels:
                     tag_widget = self._create_tag_widget(raw_label, cat_id)
@@ -398,14 +436,109 @@ class ACVView(QWidget):
                 
                 layout.addStretch()
                 container.adjustSize()
-                #print(f"DEBUG: {cat_id} refresh done.", flush=True)
             except Exception as e:
-                #print(f"DEBUG: Error inside _refresh_category_rows for {cat_id}: {e}", flush=True)
                 raise e
+        
+        self._refresh_graphviz_v_tags()
+
+    def _refresh_graphviz_v_tags(self):
+        for i in reversed(range(self.v_tags_layout.count())):
+            item = self.v_tags_layout.takeAt(i)
+            if item is not None:
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
+                
+        try:
+            for cat_id in ['A', 'C', 'V']:
+                labels = self.pm.acv_dict.get(cat_id, {}).get('labels', [])
+                fg_color = self.COLORS.get(cat_id, {}).get('fg', '#ffffff')
+                for raw_label in labels:
+                    display_name = raw_label.split('-', 1)[1] if '-' in raw_label else raw_label
+                    chk = QCheckBox(f"{cat_id}: {display_name}")
+                    chk.setStyleSheet(f"color: {fg_color}; font-weight: bold; font-size: 11pt; margin-right: 10px;")
+                    chk.setChecked(True)
+                    chk.setProperty('raw_label', raw_label)
+                    chk.setProperty('cat_id', cat_id)
+                    self.v_tags_layout.addWidget(chk)
+            self.v_tags_layout.addStretch()
+        except:
+            pass
+
+    def _on_export_gv(self):
+        try:
+            matrix_df = self.pm.genACVMatrix()
+            if matrix_df.empty:
+                QMessageBox.warning(self, "警告", "無法產出關聯圖，請確認您已經載入分詞方案並且有標記分類過單詞。")
+                return
+                
+            selected_A = []
+            selected_C = []
+            selected_V = []
+            for i in range(self.v_tags_layout.count()):
+                item = self.v_tags_layout.itemAt(i)
+                if item and item.widget():
+                    widget = item.widget()
+                    if isinstance(widget, QCheckBox) and widget.isChecked():
+                        raw_label = widget.property('raw_label')
+                        cat_id = widget.property('cat_id')
+                        if raw_label:
+                            if cat_id == 'A': selected_A.append(raw_label)
+                            elif cat_id == 'C': selected_C.append(raw_label)
+                            elif cat_id == 'V': selected_V.append(raw_label)
+                    
+            if not selected_A and not selected_C and not selected_V:
+                QMessageBox.warning(self, "警告", "請至少勾選一個標籤！")
+                return
+
+            file_path, _ = QFileDialog.getSaveFileName(
+                self, "儲存 ACV 關聯圖", "", "PDF 向量圖 (*.pdf);;SVG 向量圖 (*.svg)"
+            )
+            
+            if file_path:
+                if not file_path.endswith('.pdf') and not file_path.endswith('.svg'):
+                    file_path += '.pdf'
+                
+                chosen_labels = [selected_A, selected_C, selected_V]
+                
+                success = self.pm.genACVImage(chosen_labels, file_path)
+                if success:
+                    QMessageBox.information(self, "成功", f"ACV 關聯圖已成功匯出至：\n{file_path}")
+                else:
+                    QMessageBox.warning(self, "警告", "無法產出關聯圖。")
+        except Exception as e:
+            QMessageBox.critical(self, "錯誤", f"匯出失敗：\n{str(e)}")
 
     def _refresh_token_scheme_list(self):
         self.token_scheme_list.clear()
         self.token_scheme_list.addItems(self.pm.token_schemes.keys())
+
+    def _on_preview_matrix(self):
+        try:
+            matrix_df = self.pm.genACVMatrix()
+            if matrix_df.empty:
+                QMessageBox.warning(self, "警告", "無法產出矩陣，請確認您已經載入分詞方案並且有標記分類過單詞。")
+                self.matrix_preview_table.setRowCount(0)
+                self.matrix_preview_table.setColumnCount(0)
+                return
+                
+            self.matrix_preview_table.setRowCount(matrix_df.shape[0])
+            self.matrix_preview_table.setColumnCount(matrix_df.shape[1])
+            self.matrix_preview_table.setHorizontalHeaderLabels([str(c) for c in matrix_df.columns])
+            self.matrix_preview_table.setVerticalHeaderLabels([str(r) for r in matrix_df.index])
+            
+            for row in range(matrix_df.shape[0]):
+                for col in range(matrix_df.shape[1]):
+                    val = matrix_df.iloc[row, col]
+                    item = QTableWidgetItem(f"{val:.2f}" if isinstance(val, float) else str(val))
+                    item.setFlags(item.flags() ^ Qt.ItemFlag.ItemIsEditable)
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    self.matrix_preview_table.setItem(row, col, item)
+                    
+            self.matrix_preview_table.resizeColumnsToContents()
+            QMessageBox.information(self, "成功", "矩陣預覽已更新。")
+        except Exception as e:
+            QMessageBox.critical(self, "錯誤", f"預覽失敗：{str(e)}")
 
     def _on_export_matrix(self):
         try:

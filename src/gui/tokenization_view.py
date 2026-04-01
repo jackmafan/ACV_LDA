@@ -36,9 +36,9 @@ class TokenizationView(QWidget):
         self.tab_edit = QWidget()
         self.tab_export = QWidget() 
         
-        self.tabs.addTab(self.tab_raw, "1. 載入與初步結果") 
-        self.tabs.addTab(self.tab_edit, "2. 編輯與停用詞設定")
-        self.tabs.addTab(self.tab_export, "3. 關鍵詞頻結果") 
+        self.tabs.addTab(self.tab_raw, "a. 載入與初步結果") 
+        self.tabs.addTab(self.tab_edit, "b. 編輯與停用詞設定")
+        self.tabs.addTab(self.tab_export, "c. 關鍵詞頻結果") 
         
         self.tabs.currentChanged.connect(self._on_tab_changed)
         layout.addWidget(self.tabs)
@@ -60,7 +60,7 @@ class TokenizationView(QWidget):
         # Single Text Browser for Display
         self.data_browser = QTextBrowser()
         self.data_browser.setOpenLinks(False) 
-        self.data_browser.setStyleSheet("QTextBrowser { border: None; background-color: #f7f7f7; color: black; font-size: 14pt; padding: 10px; }")
+        self.data_browser.setStyleSheet("QTextBrowser { border: None; background-color: #f7f7f7; color: black; padding: 10px; }")
         layout.addWidget(self.data_browser, stretch=1)
 
     def init_tab_edit(self):
@@ -81,7 +81,7 @@ class TokenizationView(QWidget):
         left_layout.addWidget(left_header_widget)
         self.edit_left_browser = QTextBrowser()
         self.edit_left_browser.setOpenLinks(False)
-        self.edit_left_browser.setStyleSheet("QTextBrowser { border: 1px solid #ddd; background-color: #ffffff; color: black; padding: 5px; font-size: 13pt; }")
+        self.edit_left_browser.setStyleSheet("QTextBrowser { border: 1px solid #ddd; background-color: #ffffff; color: black; padding: 5px;}")
         left_layout.addWidget(self.edit_left_browser)
         compare_layout.addWidget(left_widget, stretch=1)
 
@@ -116,7 +116,7 @@ class TokenizationView(QWidget):
         self.edit_right_browser = QTextBrowser()
         self.edit_right_browser.setOpenLinks(False)
         self.edit_right_browser.anchorClicked.connect(self._on_anchor_clicked)
-        self.edit_right_browser.setStyleSheet("QTextBrowser { border: 1px solid #ddd; background-color: #ffffff; color: black; padding: 5px; font-size: 13pt; }")
+        self.edit_right_browser.setStyleSheet("QTextBrowser { border: 1px solid #ddd; background-color: #ffffff; color: black; padding: 5px; }")
         right_layout.addWidget(self.edit_right_browser)
         compare_layout.addWidget(right_widget, stretch=1)
         self.edit_splitter.addWidget(compare_widget)
@@ -141,8 +141,8 @@ class TokenizationView(QWidget):
         far_right_layout = QVBoxLayout(far_right_widget)
         far_right_layout.addWidget(QLabel("停用詞列表"))
         self.stop_words_list = QListWidget()
-        self.stop_words_list.setStyleSheet("background-color: #1e1e1e; color: white; font-size: 14pt;")
-        far_right_layout.addWidget(self.stop_words_list, stretch=5)
+        self.stop_words_list.setStyleSheet("background-color: #1e1e1e; color: white; ")
+        far_right_layout.addWidget(self.stop_words_list, stretch=2)
         
         manual_stop_layout = QHBoxLayout()
         self.txt_manual_stop = QLineEdit()
@@ -150,6 +150,11 @@ class TokenizationView(QWidget):
         self.btn_manual_stop.clicked.connect(self.add_manual_stop_word)
         manual_stop_layout.addWidget(self.txt_manual_stop)
         manual_stop_layout.addWidget(self.btn_manual_stop)
+        
+        self.btn_import_stop = QPushButton("從txt匯入")
+        self.btn_import_stop.clicked.connect(self.import_stop_words_from_txt)
+        manual_stop_layout.addWidget(self.btn_import_stop)
+        
         far_right_layout.addLayout(manual_stop_layout)
         
         self.btn_delete_stop = QPushButton("刪除[Del]")
@@ -158,7 +163,7 @@ class TokenizationView(QWidget):
         
         far_right_layout.addWidget(QLabel("已儲存方案"))
         self.scheme_list = QListWidget()
-        far_right_layout.addWidget(self.scheme_list, stretch=2)
+        far_right_layout.addWidget(self.scheme_list, stretch=1)
         self.txt_scheme_name = QLineEdit()
         far_right_layout.addWidget(self.txt_scheme_name)
         self.btn_save_scheme = QPushButton("儲存方案")
@@ -169,6 +174,7 @@ class TokenizationView(QWidget):
         far_right_layout.addWidget(self.btn_load_scheme)
         
         self.edit_splitter.addWidget(far_right_widget)
+        self.edit_splitter.setSizes([1500, 400])
         layout.addWidget(self.edit_splitter, stretch=1)
 
         # Pagination Bar
@@ -194,6 +200,14 @@ class TokenizationView(QWidget):
     def _setup_tab_export(self):
         layout = QVBoxLayout(self.tab_export)
         
+        # Top controls for export
+        export_ctrl_layout = QHBoxLayout()
+        self.btn_export_keywords = QPushButton("匯出關鍵字列表 (.txt)")
+        self.btn_export_keywords.clicked.connect(self.export_keywords_to_txt)
+        export_ctrl_layout.addWidget(self.btn_export_keywords)
+        export_ctrl_layout.addStretch()
+        layout.addLayout(export_ctrl_layout)
+
         # 使用 Splitter 讓表格在左，對照內容在右
         self.export_splitter = QSplitter(Qt.Orientation.Horizontal)
         
@@ -203,14 +217,14 @@ class TokenizationView(QWidget):
         header = self.export_table.horizontalHeader()
         if header is not None:
             header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.export_table.setStyleSheet("font-size: 14pt; color: black; background-color: white;")
+        self.export_table.setStyleSheet(" color: black; background-color: white;")
         self.export_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.export_table.itemSelectionChanged.connect(self._on_export_table_selection_changed)
         
         self.export_splitter.addWidget(self.export_table)
         
         self.context_browser = QTextBrowser()
-        self.context_browser.setStyleSheet("QTextBrowser { background-color: #f9f9f9; color: black; font-size: 13pt; padding: 10px; }")
+        self.context_browser.setStyleSheet("QTextBrowser { background-color: #f9f9f9; color: black;  padding: 10px; }")
         
         self.export_splitter.addWidget(self.context_browser)
         
@@ -304,6 +318,36 @@ class TokenizationView(QWidget):
             self.txt_manual_stop.clear()
             self.refresh_view()
             self.update_callback()
+
+    def import_stop_words_from_txt(self):
+        filepath, _ = QFileDialog.getOpenFileName(self, "選擇停用詞檔 (.txt)", "", "Text Files (*.txt)")
+        if not filepath: return
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                words = [line.strip() for line in f if line.strip()]
+            if words:
+                self.pm.addStopwords(words)
+                self.refresh_view()
+                self.update_callback()
+                QMessageBox.information(self, "成功", f"已從檔案匯入 {len(words)} 個停用詞")
+        except Exception as e:
+            QMessageBox.critical(self, "匯入失敗", str(e))
+
+    def export_keywords_to_txt(self):
+        data = self.pm.getNoneStopWords()
+        if not data:
+            QMessageBox.warning(self, "警告", "目前沒有關鍵字可供匯出")
+            return
+            
+        filepath, _ = QFileDialog.getSaveFileName(self, "儲存關鍵字列表", "keywords.txt", "Text Files (*.txt)")
+        if not filepath: return
+        try:
+            with open(filepath, 'w', encoding='utf-8') as f:
+                for word, count in data:
+                    f.write(f"{word}\n")
+            QMessageBox.information(self, "成功", f"關鍵字列表已儲存至 {filepath}")
+        except Exception as e:
+            QMessageBox.critical(self, "儲存失敗", str(e))
 
     def delete_selected_stop_words(self):
         selected = self.stop_words_list.selectedItems()

@@ -1,10 +1,11 @@
 from re import L
-from curses import OK
 import pandas as pd
 import json
 import os
 import jieba
 import time
+from .acv import acvMatrix , acvImage
+from .lda import runLDAPipeline
 
 def jsonable(obj):
     return isinstance(obj, (str, int, float, bool, list, dict, type(None)))
@@ -16,6 +17,7 @@ class ProjectManager:
     
         # jieba tab1 (原始數據展示層)
         self.__raw_data: list[str] = []
+        self.__raw_data_attr:list[dict] = []
         self.__raw_tokenized_data: list[list[str]] = []
         self.__raw_jieba = jieba.Tokenizer(dictionary=os.path.join(os.path.dirname(__file__), "dict.txt.big"))
         
@@ -40,20 +42,43 @@ class ProjectManager:
         self.__ACV_token_scheme: dict = {}
         self.__word2acvlabel: dict[str, str | None] = {}
 
+        # LDA tab
+        self.__LDA_token_scheme: dict = {}
+        self.__LDA_synonyms:list[list[str] | None] = []
+        self.__LDA_params:dict[str, int | float] = {
+            # TODO decide params
+            'n_min': 5, # for n sweeping
+            'n_max': 10, # for n sweeping
+            'n_final':7, # decide by user after sweeping
+            'alpha': 0.1,
+            'beta': 0.1,
+            'iterations': 50,
+            'random_state': 42,   
+            'low_freq': 2,
+            'high_freq': 0.4,
+        }
+
+        self.__last_lda_sweep = []
     
-    # OK
     def loadRawData(self, df: pd.DataFrame): 
         # Load 'text' or col 0 of csv/xlsx
         text_col = 'Comments' if 'Comments' in df.columns else df.columns[0]
+        date_col = 'Dates' if 'Dates' in df.columns else df.columns[1]
 
-        # Set raw data
+        # 1. 存入主要文字列表
         self.__raw_data = df[text_col].astype(str).tolist()
-        print("start") 
-        _start = time.time()
+        
+        # 2. 存入屬性字典列表 (目前只放日期，未來可輕鬆擴充)
+        self.__raw_data_attr = []
+        for val in df[date_col]:
+            # 強制轉換為字串存儲，避免 JSON 序列化失敗
+            self.__raw_data_attr.append({
+                'date': str(val) if pd.notna(val) else ""
+            })
+
+
         self.__raw_tokenized_data = [list(self.__raw_jieba.cut(s)) for s in self.__raw_data]
-        print("end", time.time() - _start)
-        # 
-        self.__tokenized_data = [list(tokens) for tokens in self.__raw_tokenized_data]
+
         self.__lock = [False] * len(self.__raw_data)
         self.__word_added = []
         self.__stopwords = []
@@ -152,8 +177,7 @@ class ProjectManager:
         
         self.removeStopwords(removelist)
         self.addStopwords(addlist)
-        
-                    
+                         
     # OK
     def lockSentence(self, ID:int) -> str | None:
         assert 0 <= ID < len(self.__raw_data), f'Setence Id out of range'
@@ -201,6 +225,10 @@ class ProjectManager:
         return self.__raw_data
 
     @property
+    def raw_data_attr(self) -> list[dict]:
+        return self.__raw_data_attr
+
+    @property
     def tokenized_data(self) -> list[list[str]]:
         return self.__tokenized_data
     
@@ -236,6 +264,7 @@ class ProjectManager:
 
         self.__token_schemes[name] = {
             "raw_data": self.__raw_data,
+            "raw_data_attr": self.__raw_data_attr,
             "word_added": self.__word_added,
             "stopwords": self.__stopwords,
             "lock": self.__lock,
@@ -246,6 +275,7 @@ class ProjectManager:
         assert name in self.__token_schemes, f'Token Scheme {name} not found'
         scheme = self.__token_schemes[name]
         self.__raw_data = scheme.get("raw_data", [])
+        self.__raw_data_attr = scheme.get("raw_data_attr", [])
         self.__raw_tokenized_data = [list(self.__raw_jieba.cut(s)) for s in self.__raw_data]
 
         self.__word_added = scheme.get("word_added", [])
@@ -318,65 +348,149 @@ class ProjectManager:
 
     # OK
     def genACVMatrix(self) -> pd.DataFrame:
-        if not self.__ACV_token_scheme or 'tokenized_data' not in self.__ACV_token_scheme:
-            return pd.DataFrame()
+        return acvMatrix(self.__ACV_token_scheme, self.__acv_dict, self.__word2acvlabel)
 
-        a_lbls = self.__acv_dict['A']['labels']
-        c_lbls = self.__acv_dict['C']['labels']
-        v_lbls = self.__acv_dict['V']['labels']
-        
-        row_headers = a_lbls + c_lbls
-        col_headers = c_lbls + v_lbls
-        
-        matrix = pd.DataFrame(0.0, index=row_headers, columns=col_headers)
-        
-        for tokens in self.__ACV_token_scheme['tokenized_data']:
-            if not tokens: continue
-            
-            # Map tokens to their labels
-            sentence_labels = []
-            for word in tokens:
-                label = self.__word2acvlabel.get(word)
-                if label:
-                    sentence_labels.append(label)
-                    
-            if len(sentence_labels) <= 1:
-                continue
+    # OK
+    def genACVImage(self, chosen_labels: list[list[str]], save_path: str):
+        return acvImage(self.__ACV_token_scheme, self.__acv_dict, self.__word2acvlabel, chosen_labels, save_path)
+
+    # OK
+    def loadTokenScheme2LDA(self, token_scheme_name:str):
+        assert token_scheme_name in self.__token_schemes, f'Token Scheme {token_scheme_name} not found'
+        self.__LDA_token_scheme = self.__token_schemes[token_scheme_name]
+        self.__last_lda_sweep = [] # Store last results for UI persistence
+
+    # OK
+    def loadSynonyms2LDA(self, synonyms_path: str):
+        new_synonyms = []
+        seen_words = set()
+        with open(synonyms_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+
+                # support both fullwidth & halfwidth = 
+                parts = line.replace('＝', '=').split('=')
+                syn_list = [p.strip() for p in parts if p.strip()]
                 
-            for i in range(len(sentence_labels)):
-                for j in range(i + 1, len(sentence_labels)):
-                    l1 = sentence_labels[i]
-                    l2 = sentence_labels[j]
-                    
-                    if l1 == l2: continue
-                    
-                    cat1 = l1[0]
-                    cat2 = l2[0]
-                    
-                    row_key = None
-                    col_key = None
-                    
-                    score = 1.0 if j == i + 1 else 0.01
-                    
-                    if cat1 == 'A':
-                        row_key = l1
-                        if cat2 in ['C', 'V']: col_key = l2
-                    elif cat1 == 'C':
-                        if cat2 == 'A':
-                            row_key = l2
-                            col_key = l1
-                        elif cat2 == 'C':
-                            row_key = l1
-                            col_key = l2
-                        elif cat2 == 'V':
-                            row_key = l1
-                            col_key = l2
-                    elif cat1 == 'V':
-                        col_key = l1
-                        if cat2 in ['A', 'C']: row_key = l2
+                for word in syn_list:
+                    if word in seen_words: return f'有兩行出現重複詞彙'
+                    seen_words.add(word)
+                new_synonyms.append(syn_list)
+        
+        self.__LDA_synonyms = new_synonyms
 
-                    if row_key and col_key and row_key in matrix.index and col_key in matrix.columns:
-                        matrix.at[row_key, col_key] += score
+    # OK
+    def removeSynonymsFromLDA(self):
+        self.__LDA_synonyms = []
 
-        return matrix
+    # OK
+    def setLDAParams(self, params:dict):
+        assert params.keys() == self.__LDA_params.keys(), f'Invalid parameters'
+        if params['alpha'] != 'auto' or not isinstance(params['alpha'], (int, float)):
+            raise ValueError('alpha must be auto or float')
+        if params['beta'] != 'auto' or not isinstance(params['beta'], (int, float)):
+            raise ValueError('beta must be auto or float')
+        if not isinstance(params['low_freq'], (int, float)):
+            raise ValueError('low_freq must be int')
+        if not isinstance(params['high_freq'], (int, float)):
+            raise ValueError('high_freq must be int')
+        if not isinstance(params['iterations'],  (int, float)):
+            raise ValueError('iterations must be int')
+        if not isinstance(params['n_min'],  (int, float)):
+            raise ValueError('n_min must be int')
+        if not isinstance(params['n_max'],  (int, float)):
+            raise ValueError('n_max must be int')
+        if not isinstance(params['n_final'],  (int, float)):
+            raise ValueError('n_final must be int')
+            
+        self.__LDA_params = params
+
+    # OK
+    def _apply_lda_synonyms(self, tokenized_data):
+        if not self.__LDA_synonyms:
+            return tokenized_data
+            
+        syn_map = {}
+        for group in self.__LDA_synonyms:
+            if not group: continue
+            target = group[0]
+            for word in group:
+                syn_map[word] = target
+                
+        new_data = []
+        for setence in tokenized_data:
+            new_data.append([syn_map.get(w, w) for w in setence])
+        return new_data
+
+    def _filter_stopwords(self, tokenized_data, stopwords):
+        new_data = []
+        for sentence in tokenized_data:
+            new_sentence = [word for word in sentence if word not in stopwords]
+            new_data.append(new_sentence)
+        return new_data
+
+    def genLDASweep(self, params_dict: dict, save_dir: str, prefix: str):
+        tokenized_data = self.__LDA_token_scheme.get('tokenized_data', [])
+        if not tokenized_data:
+            raise ValueError("請先載入分詞方案以進行 LDA 分析。")
+
+        tokenized_data = self._filter_stopwords(tokenized_data, self.__LDA_token_scheme.get('stopwords', []))
+        tokenized_data = self._apply_lda_synonyms(tokenized_data)
+        
+        n_min = int(params_dict['n_min'])
+        n_max = int(params_dict['n_max'])
+        
+        results = []
+        for k in range(n_min, n_max + 1):
+            perpl, coh, _, _, _ = runLDAPipeline(
+                tokenized_docs=tokenized_data,
+                num_topics = k, 
+                alpha = params_dict['alpha'], beta = params_dict['beta'],
+                use_tfidf = params_dict.get('use_tfidf', True), 
+                no_below = params_dict['low_freq'], no_above = params_dict['high_freq'], 
+                iterations = params_dict['iterations'],
+                random_state = params_dict.get('random_state', 42),
+                save_prefix = os.path.join(save_dir, prefix),
+                run_viz = False
+            )
+            results.append({"k": k, "perplexity": perpl, "coherence": coh})
+        self.__last_lda_sweep = results
+        return results
+    
+    @property
+    def last_lda_sweep(self):
+        return self.__last_lda_sweep
+
+    def genLDAFinal(self, params_dict: dict, save_dir: str, prefix: str):
+        tokenized_data = self.__LDA_token_scheme.get('tokenized_data', [])
+        if not tokenized_data:
+            raise ValueError("請先載入分詞方案以進行 LDA 分析。")
+        
+        tokenized_data = self._filter_stopwords(tokenized_data, self.__LDA_token_scheme.get('stopwords', []))
+        tokenized_data = self._apply_lda_synonyms(tokenized_data)
+        
+
+        perpl, coh, vis_data, df_word_dist, df_doc_topics = runLDAPipeline(
+                tokenized_docs=tokenized_data,
+                num_topics = params_dict['n_final'], 
+                alpha = params_dict['alpha'], beta = params_dict['beta'],
+                use_tfidf = params_dict.get('use_tfidf', True), 
+                no_below = params_dict['low_freq'], no_above = params_dict['high_freq'], 
+                iterations = params_dict['iterations'],
+                random_state = params_dict.get('random_state', 42),
+                save_prefix = os.path.join(save_dir, prefix),
+                run_viz = True,
+                doc_dates = [attr.get('date', '') for attr in self.__raw_data_attr]
+            )
+
+        return {
+            "k": params_dict['n_final'], 
+            "perplexity": perpl, 
+            "coherence": coh,
+            "vis_data": vis_data,
+            "df_word_dist": df_word_dist,
+            "df_doc_topics": df_doc_topics
+        }
     

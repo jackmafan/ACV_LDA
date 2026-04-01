@@ -7,12 +7,13 @@ from PyQt6.QtCore import Qt
 from .core.project_manager import ProjectManager
 from .gui.tokenization_view import TokenizationView
 from .gui.acv_view import ACVView
+from .gui.lda_view import LDAView
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("ACV 分析系統 (New Architecture)")
-        self.resize(1920, 1080) 
+        self.resize(1920, 800) 
 
         self.pm = ProjectManager()
 
@@ -120,8 +121,14 @@ class MainWindow(QMainWindow):
         self.btn_nav_acv = QPushButton("2. ACV 分析")
         self.btn_nav_acv.setStyleSheet(nav_btn_style)
         self.btn_nav_acv.setCheckable(True)
-        self.btn_nav_acv.clicked.connect(lambda: self.switch_view(1)) # Placeholder logic
+        self.btn_nav_acv.clicked.connect(lambda: self.switch_view(1)) 
         sidebar_layout.addWidget(self.btn_nav_acv)
+
+        self.btn_nav_lda = QPushButton("3. LDA 分析")
+        self.btn_nav_lda.setStyleSheet(nav_btn_style)
+        self.btn_nav_lda.setCheckable(True)
+        self.btn_nav_lda.clicked.connect(lambda: self.switch_view(2)) 
+        sidebar_layout.addWidget(self.btn_nav_lda)
         
         body_layout.addWidget(self.sidebar)
 
@@ -133,6 +140,9 @@ class MainWindow(QMainWindow):
         self.acv_view = ACVView(self.pm)
         self.content_stack.addWidget(self.acv_view) 
 
+        self.lda_view = LDAView(self.pm)
+        self.content_stack.addWidget(self.lda_view)
+        
         body_layout.addWidget(self.content_stack, stretch=1)
         main_layout.addWidget(body_container, stretch=1)
 
@@ -144,6 +154,7 @@ class MainWindow(QMainWindow):
         self.btn_nav_tokenize.setEnabled(True)
         # 分析頁面則需要有資料才能進入
         self.btn_nav_acv.setEnabled(has_data)
+        self.btn_nav_lda.setEnabled(has_data)
         
         filename = os.path.basename(self.pm.getProjectPath) if self.pm.getProjectPath else "未儲存"
         self.lbl_project_status.setText(f"當前專案: {filename}")
@@ -152,12 +163,14 @@ class MainWindow(QMainWindow):
         self.content_stack.setCurrentIndex(index)
         self.btn_nav_tokenize.setChecked(index == 0)
         self.btn_nav_acv.setChecked(index == 1)
+        self.btn_nav_lda.setChecked(index == 2)
 
     def refresh_all_views(self):
         """Called when significant global state changes (like new project loaded)."""
         self.update_ui_state()
         self.tokenize_view.refresh_view()
         self.acv_view.refresh_view()
+        self.lda_view.refresh_view()
 
     def action_new_project(self):
         if len(self.pm.raw_data) > 0:

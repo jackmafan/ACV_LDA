@@ -1,0 +1,15 @@
+jieba
+pandas
+plotly
+PyQt6
+PyQt6-WebEngine
+numpy
+openpyxl
+networkx
+matplotlib
+gensim 
+pyLDAvis 
+pyecharts
+seaborn
+scipy
+scikit-learn

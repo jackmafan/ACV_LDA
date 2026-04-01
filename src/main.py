@@ -11,13 +11,13 @@ if platform.system() == "Linux":
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from PyQt6.QtWidgets import QApplication
-from src_new.app import MainWindow
+from src.app import MainWindow
 
 def main():
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     font = app.font()
-    font.setPointSize(14)
+    font.setPointSize(12)
     app.setFont(font)
     
     window = MainWindow()
