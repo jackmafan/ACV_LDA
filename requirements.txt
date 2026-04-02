@@ -13,3 +13,4 @@ pyecharts
 seaborn
 scipy
 scikit-learn
+pyinstaller

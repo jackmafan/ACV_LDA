@@ -15,8 +15,10 @@ conda install git
 git clone https://github.com/jackmafan/ACV_LDA.git
 cd ACV_LDA 
 pip install -r requirements.txt
-pyinstaller --noconsole --onefile main.py 
+pyinstaller --noconfirm --onefile --windowed --add-data "src/core/dict.txt.big;src/core" src/main.py
 ```
+在ACV_LDA/dist資料夾下即可找到編譯完後的執行檔
+(不欲編譯也可在ACV_LDA資料夾下執行python src/main.py指令執行程式)
 
 # 使用
 
