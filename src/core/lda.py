@@ -6,6 +6,13 @@ from gensim.models import LdaModel, TfidfModel, CoherenceModel
 import pyLDAvis
 import pyLDAvis.gensim_models as gensimvis
 
+from pyecharts import options as opts
+from pyecharts.charts import Sankey,Graph
+
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+
 def len2passes(num_sentences):
     if num_sentences < 1000:
         return 30
@@ -90,9 +97,9 @@ def runLDAPipeline(tokenized_docs, num_topics, alpha, beta, use_tfidf, no_below,
     if run_viz:
         base_filename = f"{save_prefix}-K{num_topics}" if save_prefix else None
         
-        # a. pyLDAvis 物件
+        # Set n_jobs=1 to avoid ghost windows in packaged EXE
         try:
-            vis_data = gensimvis.prepare(lda_model, corpus_for_lda, dictionary=dictionary)
+            vis_data = gensimvis.prepare(lda_model, corpus_for_lda, dictionary=dictionary, n_jobs=1)
             if save_prefix:
                 pyLDAvis.save_html(vis_data, f"{base_filename}-ldavis.html")
         except Exception as e:
@@ -147,11 +154,7 @@ def runLDAPipeline(tokenized_docs, num_topics, alpha, beta, use_tfidf, no_below,
     return perplexity, coherence, vis_data, df_word_dist, df_doc_topics
 
 def ldaSankey(topic_words, out_html):
-    try:
-        from pyecharts import options as opts
-        from pyecharts.charts import Sankey
-    except ImportError:
-        return
+    
         
     nodes = []
     links = []
@@ -183,11 +186,7 @@ def ldaSankey(topic_words, out_html):
     sankey.render(out_html)
 
 def ldaNetwork(topic_words, out_html):
-    try:
-        from pyecharts import options as opts
-        from pyecharts.charts import Graph
-    except ImportError:
-        return
+
         
     nodes = []
     links = []
@@ -263,13 +262,6 @@ def ldaHeatmap(df_doc_topics, doc_dates, out_png):
     """
     Generate a heatmap of topic probability averages over time (dates).
     """
-    print("Are we here?")
-    try:
-        import seaborn as sns
-        import matplotlib.pyplot as plt
-    except ImportError:
-        print("Heatmap skipped: seaborn or matplotlib not installed.")
-        return
         
     # 1. 準備數據
     df = df_doc_topics.copy()

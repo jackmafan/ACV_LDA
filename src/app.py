@@ -12,7 +12,7 @@ from .gui.lda_view import LDAView
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("ACV 分析系統 (New Architecture)")
+        self.setWindowTitle("ACV 分析系統")
         self.resize(1920, 800) 
 
         self.pm = ProjectManager()

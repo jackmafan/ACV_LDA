@@ -1,4 +1,10 @@
-import pandas as pd 
+import pandas as pd
+import matplotlib.backends.backend_pdf # Ensure PyInstaller includes PDF backend
+import matplotlib.patches as patches
+import networkx as nx
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+import sys
 
 # Ok
 def acvMatrix(ACV_token_scheme, acv_dict, word2acvlabel):
@@ -67,10 +73,6 @@ def acvMatrix(ACV_token_scheme, acv_dict, word2acvlabel):
 
 
 def acvImage(ACV_token_scheme, acv_dict, word2acvlabel, chosen_labels: list[list[str]], save_path: str):
-    import networkx as nx
-    import matplotlib.pyplot as plt
-    import matplotlib as mpl
-    import sys
     
     if sys.platform.startswith('win'):
         mpl.rcParams['font.sans-serif'] = ['Microsoft JhengHei', 'SimHei', 'Arial Unicode MS']
@@ -155,7 +157,6 @@ def acvImage(ACV_token_scheme, acv_dict, word2acvlabel, chosen_labels: list[list
     plt.figure(figsize=(fig_width, 8), dpi=200)
     ax = plt.gca()
     
-    import matplotlib.patches as patches
     
     # 統一文字方塊尺寸
     box_w = 0.80

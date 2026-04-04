@@ -25,7 +25,7 @@ class ProjectManager:
         self.__lock: list[bool] = []
         self.__tokenized_data: list[list[str]] = []
         self.__word_added: list[str] = []
-        self.__stopwords: list[str] = []
+        self.__stopwords: list[str] = [" ",]
         self.__token_schemes: dict = {}
         self.__jieba = jieba.Tokenizer(dictionary=os.path.join(os.path.dirname(__file__), "dict.txt.big"))
 
@@ -81,7 +81,7 @@ class ProjectManager:
 
         self.__lock = [False] * len(self.__raw_data)
         self.__word_added = []
-        self.__stopwords = []
+        self.__stopwords = [" "]
         self.__jieba = jieba.Tokenizer(dictionary=os.path.join(os.path.dirname(__file__), "dict.txt.big"))
         
     # OK
@@ -208,12 +208,12 @@ class ProjectManager:
 
     # OK
     def loadProject(self, path:str) -> str | None:
-        self.__project_path = path
         with open(path, 'r', encoding='utf-8') as f:
             data = json.load(f)
         
         for key, value in data.items():
             setattr(self, f"_{self.__class__.__name__}__{key}", value)
+        self.__project_path = path # make sure __project_path is overwritten by actuaul path
 
         self.__jieba = jieba.Tokenizer(dictionary=os.path.join(os.path.dirname(__file__), "dict.txt.big"))
         for word in self.__word_added:
@@ -279,7 +279,7 @@ class ProjectManager:
         self.__raw_tokenized_data = [list(self.__raw_jieba.cut(s)) for s in self.__raw_data]
 
         self.__word_added = scheme.get("word_added", [])
-        self.__stopwords = scheme.get("stopwords", [])
+        self.__stopwords = scheme.get("stopwords", [" "])
         self.__lock = scheme.get("lock", [False] * len(self.__raw_data))
         self.__tokenized_data = scheme.get("tokenized_data", [])
 

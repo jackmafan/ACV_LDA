@@ -96,6 +96,12 @@ class ACVView(QWidget):
         self.word_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.word_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.word_table.setStyleSheet(side_panel_style)
+        
+        # 增加 Delete 快捷鍵綁定
+        from PyQt6.QtGui import QShortcut, QKeySequence
+        delete_shortcut = QShortcut(QKeySequence(Qt.Key.Key_Delete), self.word_table)
+        delete_shortcut.activated.connect(self._on_unassign_category)
+        
         bl_layout.addWidget(self.word_table)
         
         # Bottom Right: Tokenization Scheme Loading
@@ -288,25 +294,17 @@ class ACVView(QWidget):
         if not refs: return
         
         txt_input = refs['input']
-        label_text = txt_input.text().strip()
-        #print(f"DEBUG: _on_add_category_label called for {cat_id} with text: '{label_text}'")
+        label_text = txt_input.text().strip()     
         if not label_text: return
-        
-        new_label = self.pm.addACVLabel(cat_id, label_text)
-        #print(f"DEBUG: Label added to PM: {new_label}")
-        
+
+        new_label = self.pm.addACVLabel(cat_id, label_text)   
         txt_input.clear()
-        import sys
-        #print(f"DEBUG: Text cleared, starting refresh...", flush=True)
-        sys.stdout.flush()
-        try:
+
+        try:    
             self._refresh_category_rows()
         except Exception as e:
-            #print(f"CRITICAL ERROR in _refresh_category_rows: {e}", flush=True)
-            import traceback
-            traceback.print_exc()
-            QMessageBox.critical(self, "刷新錯誤", f"在刷新時發生錯誤: {str(e)}")
-        
+            QMessageBox.critical(self, "錯誤", f"新增標籤失敗: {e}")
+
     def _on_remove_category_label(self, raw_label: str):
         reply = QMessageBox.question(self, "刪除標籤", f"是否確定要刪除標籤「{raw_label}」？", 
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
@@ -418,13 +416,15 @@ class ACVView(QWidget):
                 continue
                 
             layout = refs['layout']
-            container = refs['container']
+            container = refs['container']  
             
-            for i in reversed(range(layout.count())):
-                item = layout.takeAt(i)
-                if item.widget():
-                    item.widget().deleteLater()
-            
+            while layout.count() > 0:
+                item = layout.takeAt(0)
+                if item and item.widget():
+                    w = item.widget()
+                    w.hide()
+                    w.deleteLater()
+
             try:
                 ad = self.pm.acv_dict
                 labels = ad[cat_id]['labels']
